@@ -26,13 +26,13 @@
   <body>
     <div id="wrapper">
       <div id="side">
-        Status :<br /><span id="status"></span><br />
+        Status :<br /><span id="status">Drop .basis file</span><br />
         Transcode time:<br /><span id="transcodeElapsedTime"></span> ms<br />
         TextureUpload time:<br /><span id="textureUploadElapsedTime"></span> ms<br />
-        DXT format:<br /><span id="dxtFormat"></span><br />
+        Texture format:<br /><span id="textureFormat"></span><br />
         Texture width:<br /><span id="textureWidth"></span><br />
         Texture height:<br /><span id="textureHeight"></span><br />
-        Mipmap level:<br /><span id="mipmapLevel"></span><br />
+        Mipmaps level:<br /><span id="mipmapsLevel"></span><br />
         File bytes:<br /><span id="fileBytes"></span> KB<br />
         Data bytes:<br /><span id="dataBytes"></span> KB<br />
       </div>
@@ -46,9 +46,6 @@
     <script>
       const container = document.getElementById('canvas');
 
-      const config = {
-      };
-
       const renderer = new THREE.WebGLRenderer({antialias: true});
       renderer.setPixelRatio(window.devicePixelRatio);
       renderer.setSize(window.innerWidth - 200, window.innerHeight);
@@ -57,10 +54,10 @@
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0xffffff);
       const camera = new THREE.PerspectiveCamera(60, (window.innerWidth - 200) / window.innerHeight);
-      camera.position.z = -3;
+      camera.position.z = -4;
 
       const ground = new THREE.Mesh(
-        new THREE.PlaneBufferGeometry(4, 4),
+        new THREE.PlaneBufferGeometry(5, 5),
         new THREE.MeshBasicMaterial({
           color: 0xaaaaaa
         })
@@ -83,6 +80,9 @@
       textureLoader.setTranscoderPath('basis/');
       textureLoader.detectSupport(renderer);
 
+      const supports = getCompressedTextureSupport();
+      textureLoader.workerConfig.format = getLoaderFormatParameter(supports[0]);
+
       const controls = new THREE.OrbitControls(camera, renderer.domElement);
 
       const stats = new Stats();
@@ -99,10 +99,10 @@
             texture.minFilter = THREE.LinearFilter;
             plane.material.map = texture;
             document.getElementById('transcodeElapsedTime').innerText = texture.elapsedTime.toFixed(2);
-            document.getElementById('dxtFormat').innerText = getDXTFormatStrings(texture.format);
+            document.getElementById('textureFormat').innerText = getTextureFormatStrings(texture.format);
             document.getElementById('textureWidth').innerText = texture.image.width;
             document.getElementById('textureHeight').innerText = texture.image.height;
-            document.getElementById('mipmapLevel').innerText = texture.mipmaps.length;
+            document.getElementById('mipmapsLevel').innerText = texture.mipmaps.length;
             document.getElementById('dataBytes').innerText = (getDataBytes(texture.mipmaps) / 1024).toFixed(0);
             document.getElementById('status').innerText = 'Uploading texture';
             plane.scale.x = texture.image.width / texture.image.height;
@@ -140,19 +140,60 @@
       }
 
       function initGui() {
-        //const gui = new dat.GUI();
+        const api = {
+          format: supports[0]
+        };
+
+        const gui = new dat.GUI();
+        gui.add(api, 'format', supports).onChange(() => {
+          textureLoader.workerConfig.format = getLoaderFormatParameter(api.format);
+        });
       }
 
-      function getDXTFormatStrings(format) {
+      function getCompressedTextureSupport() {
+        const extensions = renderer.extensions;
+
+        const etcSupported = !! extensions.get('WEBGL_compressed_texture_etc1');
+        const dxtSupported = !! extensions.get('WEBGL_compressed_texture_s3tc');
+        const pvrtcSupported = !! extensions.get('WEBGL_compressed_texture_pvrtc')
+          || !! extensions.get('WEBKIT_WEBGL_compressed_texture_pvrtc');
+
+        const array = [];
+
+        if (etcSupported) {
+          array.push('RGB_ETC1');
+        }
+
+        if (dxtSupported) {
+          array.push('RGB_S3TC_DXT1');
+        }
+
+        if (pvrtcSupported) {
+          array.push('RGB_PVRTC_4BPPV1');
+        }
+
+        return array;
+      }
+
+      function getLoaderFormatParameter(formatName) {
+        switch(formatName) {
+          case 'RGB_S3TC_DXT1':
+            return THREE.BasisTextureLoader.BASIS_FORMAT.cTFBC1;
+          case 'RGB_PVRTC_4BPPV1':
+            return THREE.BasisTextureLoader.BASIS_FORMAT.cTFPVRTC1_4_OPAQUE_ONLY;
+          case 'RGB_ETC1':
+            return THREE.BasisTextureLoader.BASIS_FORMAT.cTFETC1;
+        }
+      }
+
+      function getTextureFormatStrings(format) {
         switch(format) {
           case 0x83F0:
             return 'RGB_S3TC_DXT1';
-          case 0x83F1:
-            return 'RGBA_S3TC_DXT1';
-          case 0x83F2:
-            return 'RGBA_S3TC_DXT3';
-          case 0x83F3:
-            return 'RGBA_S3TC_DXT5';
+          case 0x8C00:
+            return 'RGB_PVRTC_4BPPV1';
+          case 0x8D64:
+            return 'RGB_ETC1';
           default:
             return 'Unknown';
         }
